@@ -18,7 +18,7 @@ API1_KEY = "Scromnyimodz999"
 API2_URL = "https://community-ffbd.onrender.com/pvlike"
 
 # Global counter for API switching
-request_counter = 0
+request_counter = 1
 
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global request_counter
@@ -41,7 +41,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         # Determine which API to use
-        use_api1 = (request_counter % 40) < 20  # Alternate every 20 requests
+        use_api1 = (request_counter % 10) < 1 # Alternate every 20 requests
         
         if use_api1:
             # Call API 1 with region
