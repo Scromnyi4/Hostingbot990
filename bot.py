@@ -12,7 +12,7 @@ logging.basicConfig(
 
 # Bot configuration
 BOT_TOKEN = "7870492055:AAGoM58lacWK2MtjMpNMh3Yqrt47UeZ5HyA"
-ALLOWED_CHAT_ID = [-1002231017481,-1002653911532]
+ALLOWED_CHAT_ID = -1002231017481
 ADMIN_ID = 8074368052  # ID администратора
 API1_URL = "https://likes-scromnyi.vercel.app/like"
 API1_KEY = "sk_5a6bF3r9PxY2qLmZ8cN1vW7eD0gH4jK"
