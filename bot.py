@@ -12,7 +12,8 @@ logging.basicConfig(
 
 # Bot configuration
 BOT_TOKEN = "7870492055:AAGoM58lacWK2MtjMpNMh3Yqrt47UeZ5HyA"
-ALLOWED_CHAT_ID = -1002231017481  # Замените на ID вашей группы (может быть отрицательным для групп)
+ALLOWED_CHAT_ID = [-1002231017481,-1002653911532]
+ADMIN_ID = 8074368052  # ID администратора
 API1_URL = "https://likes-scromnyi.vercel.app/like"
 API1_KEY = "sk_5a6bF3r9PxY2qLmZ8cN1vW7eD0gH4jK"
 API2_URL = "https://community-ffbd.onrender.com/pvlike"
@@ -20,6 +21,10 @@ API2_URL = "https://community-ffbd.onrender.com/pvlike"
 # Global variables for API switching
 request_counter = 1
 api_switch_ratio = 0.1  # По умолчанию 10% запросов идут на API1
+
+async def is_admin(update: Update) -> bool:
+    """Проверяет, является ли отправитель администратором"""
+    return update.effective_user.id == ADMIN_ID
 
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global request_counter
@@ -31,7 +36,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if command has correct arguments
     if len(context.args) < 2:
-        await update.message.reply_text("Usage: /like <region> <uid>")
+        await update.message.reply_text("")
         return
     
     region = context.args[0]
@@ -57,7 +62,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Process API 1 response
             if data.get('status') == 1:
                 message = (
-                    f"Likes Sent ✅ \n"
+                    f"Likes Sent ✅\n"
                     f"Player Name: {data.get('PlayerNickname', 'N/A')}\n"
                     f"UID: {data.get('UID', 'N/A')}\n"
                     f"Likes Before: {data.get('LikesBeforeCommand', 'N/A')}\n"
@@ -65,7 +70,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Likes After: {data.get('LikesAfterCommand', 'N/A')}"
                 )
             else:
-                message = "Player has reached max likes today."
+                message = "Player has reached max likes today!"
             
         else:
             # Call API 2 without region
@@ -81,7 +86,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 likes_given = data.get('LikesGivenByAPI', 0)
                 
                 if likes_given == 0:
-                    message = "Player has reached max likes today!"
+                    message = "Player has reached max likes today."
                 else:
                     message = (
                         f"✅ Likes Sent\n"
@@ -112,6 +117,11 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_api_ratio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global api_switch_ratio
     
+    # Проверяем, что команда отправлена администратором
+    if not await is_admin(update):
+        await update.message.reply_text("⛔ Эта команда доступна только администратору!")
+        return
+    
     # Проверяем, что команда отправлена в разрешенном чате
     if update.effective_chat.id != ALLOWED_CHAT_ID:
         await update.message.reply_text("Этот бот работает только в определенной группе!")
@@ -126,7 +136,7 @@ async def set_api_ratio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_ratio = float(context.args[0])
         if 0 <= new_ratio <= 1:
             api_switch_ratio = new_ratio
-            await update.message.reply_text(f"API switch ratio updated: {new_ratio*100}% запросов будут идти к API1")
+            await update.message.reply_text(f"✅ API switch ratio updated: {new_ratio*100}% запросов будут идти к API1")
         else:
             await update.message.reply_text("Ratio must be between 0 and 1")
     except ValueError:
