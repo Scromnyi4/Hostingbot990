@@ -12,25 +12,22 @@ logging.basicConfig(
 
 # Bot configuration
 BOT_TOKEN = "7870492055:AAGoM58lacWK2MtjMpNMh3Yqrt47UeZ5HyA"
-ALLOWED_CHAT_ID = -1002231017481
+ALLOWED_CHAT_ID = [-1002231017481,-1002653911532]
 ADMIN_ID = 8074368052  # ID администратора
 API1_URL = "https://likes-scromnyi.vercel.app/like"
 API1_KEY = "sk_5a6bF3r9PxY2qLmZ8cN1vW7eD0gH4jK"
 API2_URL = "https://community-ffbd.onrender.com/pvlike"
 
 # Global variables for API switching
-request_counter = 1
-api_switch_ratio = 0.1  # По умолчанию 10% запросов идут на API1
+current_api = 1  # 1 for API1, 2 for API2
 
 async def is_admin(update: Update) -> bool:
     """Проверяет, является ли отправитель администратором"""
     return update.effective_user.id == ADMIN_ID
 
 async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global request_counter
-    
     # Проверяем, что команда отправлена в разрешенном чате
-    if update.effective_chat.id != ALLOWED_CHAT_ID:
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
         await update.message.reply_text("Этот бот работает только в определенной группе!")
         return
     
@@ -46,10 +43,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     temp_msg = await update.message.reply_text("Got your request, please wait...")
     
     try:
-        # Determine which API to use based on the current ratio
-        use_api1 = (request_counter % round(1/api_switch_ratio)) == 0 if api_switch_ratio > 0 else False
-        
-        if use_api1:
+        if current_api == 1:
             # Call API 1 with region
             params = {
                 'uid': uid,
@@ -71,7 +65,6 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 message = "Player has reached max likes today!"
-            
         else:
             # Call API 2 without region
             params = {'uid': uid}
@@ -97,9 +90,6 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"Likes After: {data.get('LikesafterCommand', data.get('LikesAfter', 'N/A'))}"
                     )
         
-        # Increment request counter
-        request_counter += 1
-        
         # Delete the "please wait" message after 5 seconds
         time.sleep(5)
         await context.bot.delete_message(
@@ -115,7 +105,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("An error occurred while processing your request.")
 
 async def set_api_ratio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global api_switch_ratio
+    global current_api
     
     # Проверяем, что команда отправлена администратором
     if not await is_admin(update):
@@ -123,24 +113,24 @@ async def set_api_ratio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Проверяем, что команда отправлена в разрешенном чате
-    if update.effective_chat.id != ALLOWED_CHAT_ID:
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
         await update.message.reply_text("Этот бот работает только в определенной группе!")
         return
     
     # Check if command has correct arguments
     if len(context.args) < 1:
-        await update.message.reply_text("Usage: /setapi <ratio>\nExample: /setapi 0.2 - для 20% запросов к API1")
+        await update.message.reply_text("Usage: /setapi <1 or 2>\nExample: /setapi 1 - использовать первый API\n/setapi 2 - использовать второй API")
         return
     
     try:
-        new_ratio = float(context.args[0])
-        if 0 <= new_ratio <= 1:
-            api_switch_ratio = new_ratio
-            await update.message.reply_text(f"✅ API switch ratio updated: {new_ratio*100}% запросов будут идти к API1")
+        api_choice = int(context.args[0])
+        if api_choice in [1, 2]:
+            current_api = api_choice
+            await update.message.reply_text(f"✅ API switched to {'first' if current_api == 1 else 'second'} API")
         else:
-            await update.message.reply_text("Ratio must be between 0 and 1")
+            await update.message.reply_text("Please enter 1 or 2\n1 - первый API\n2 - второй API")
     except ValueError:
-        await update.message.reply_text("Invalid ratio value. Please provide a number between 0 and 1")
+        await update.message.reply_text("Invalid value. Please provide 1 or 2\n1 - первый API\n2 - второй API")
 
 def main():
     # Create the Application
