@@ -57,7 +57,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Process API 1 response
             if data.get('status') == 1:
                 message = (
-                    f"✅ Likes Sent (API1)\n"
+                    f"Likes Sent ✅ \n"
                     f"Player Name: {data.get('PlayerNickname', 'N/A')}\n"
                     f"UID: {data.get('UID', 'N/A')}\n"
                     f"Likes Before: {data.get('LikesBeforeCommand', 'N/A')}\n"
@@ -84,7 +84,7 @@ async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     message = "Player has reached max likes today!"
                 else:
                     message = (
-                        f"✅ Likes Sent (API2)\n"
+                        f"✅ Likes Sent\n"
                         f"Player Name: {data.get('PlayerNickname', 'N/A')}\n"
                         f"UID: {data.get('UID', 'N/A')}\n"
                         f"Likes Before: {data.get('LikesbeforeCommand', data.get('LikesBefore', 'N/A'))}\n"
