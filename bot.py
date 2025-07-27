@@ -1,351 +1,350 @@
 import logging
-import re
-import asyncio
-import httpx
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import BufferedInputFile
-from aiogram.enums import ParseMode
-from typing import Optional
+import requests
+import time
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logger = logging.getLogger(__name__)
 
 # Bot configuration
-BOT_TOKEN = "7870492055:AAGoM58lacWK2MtjMpNMh3Yqrt47UeZ5HyA"
-ALLOWED_CHAT_IDS = [-1002231017481, -1002653911532]
-ADMIN_ID = 8074368052
-
-# API endpoints
+BOT_TOKEN = "8275158418:AAEhTw0NG9QzVvxkPoqYdKVPC2PAGpaeZRc"
+ALLOWED_CHAT_ID = [-1002231017481]
+ADMIN_ID = 8269775004  # Admin ID
 API1_URL = "https://likes-scromnyi.vercel.app/like"
-API1_KEY = "sk_5a6bF3r9PxY2qLmZ8cN1vW7eD0gH4jK"
+API1_KEY = "ScromnyiDev"
 API2_URL = "https://community-ffbd.onrender.com/pvlike"
-VISIT_API_URL = "http://community-ffbd.onrender.com/visit?uid="
-BAN_INFO_URL = "https://ff-bancheck.vercel.app/region/ban-info?uid="
-PLAYER_INFO_URL = "https://rzx-team-api-info.vercel.app/info?uid="
-BANNER_URL = "https://ff-banner-image.vercel.app/banner-image?uid={uid}&region=sg"
-OUTFIT_URL = "https://ff-outfit-image.vercel.app/outfit-image?uid={uid}&region=sg"
-
-# Section headers for formatting
-SECTION_HEADERS = {
-    "PLAYER INFO", "PLAYER ACTIVITY", "BASIC INFO",
-    "PLAYER RANKS", "SOCIAL INFO", "GUILD INFO"
-}
+API3_URL = "https://community-ffbd.onrender.com/like"
+API3_KEY = "Scromnyi"
+VISIT_API_URL = "http://Community-ffbd.onrender.com/visit?uid="
+CHANNEL_ID = "@scromnyi_leaks"  # Каналдын ID же username
 
 # Global variables
-current_api = 1  # 1 for API1, 2 for API2
+current_api = 1
 vip_users = set()
 
-# Initialize bot and dispatcher
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+async def is_admin(update: Update) -> bool:
+    """Check if the sender is an admin"""
+    return update.effective_user.id == ADMIN_ID
 
-# Utility functions
-async def is_admin(user_id: int) -> bool:
-    return user_id == ADMIN_ID
+async def is_vip_or_admin(update: Update) -> bool:
+    """Check if the sender is a VIP or admin"""
+    return update.effective_user.id in vip_users or await is_admin(update)
 
-async def delete_message_with_delay(chat_id: int, message_id: int, delay: int = 5):
-    await asyncio.sleep(delay)
+async def check_membership(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
+    """Check if the user is a member of the channel"""
     try:
-        await bot.delete_message(chat_id, message_id)
+        member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
+        return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        logger.error(f"Error deleting message: {e}")
+        logging.error(f"Error checking membership: {e}")
+        return False
 
-async def clean_and_format_response(text: str) -> str:
-    if text.startswith("<pre>") and text.endswith("</pre>"):
-        text = text[5:-6].strip()
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command and prompt for channel subscription"""
+    user_id = update.effective_user.id
+    if await check_membership(context, user_id):
+        await update.message.reply_text(
+            "Привет! Используй наш команда:\n"
+            "/visit <uid> - 1000 визит жөнөтүү\n"
+            "/vipvisit <uid> - VIP визит (VIP үчүн)\n"
+            "/like <region> <uid> - Лайк жөнөтүү",
+            parse_mode='Markdown'
+        )
+    else:
+        keyboard = [[InlineKeyboardButton("Каналга катталуу", url="https://t.me/scromnyi_leaks")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Чтобы использовать бота, подпишитесь на наш канал.",
+            reply_markup=reply_markup
+        )
 
-    lines = text.splitlines()
-    cleaned_lines = []
+async def visit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
+        await update.message.reply_text("Этот бот работает только в определенной группе!")
+        return
 
-    for line in lines:
-        stripped = line.strip()
-        if "API INFO OB49" in stripped or "BY API" in stripped:
-            continue
+    if not await check_membership(context, update.effective_user.id):
+        keyboard = [[InlineKeyboardButton("Подписка на канал.", url="https://t.me/scromnyi_leaks")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Чтобы использовать бота, подпишитесь на наш канал.",
+            reply_markup=reply_markup
+        )
+        return
 
-        if any(stripped.upper().endswith(header) for header in SECTION_HEADERS):
-            cleaned_lines.append(f"<b>{stripped}</b>")
-        elif ":" in line:
-            parts = line.split(":", 1)
-            if len(parts) == 2:
-                key, value = map(str.strip, parts)
-                cleaned_lines.append(f"<b>{key}</b>: {value}")
-        else:
-            cleaned_lines.append(stripped)
+    if len(context.args) < 1:
+        await update.message.reply_text("Usage: /visit <uid>")
+        return
 
-    return "\n".join(cleaned_lines)
+    uid = context.args[0]
+    temp_msg = await update.message.reply_text("Got your visit request, please wait...")
 
-# Command handlers
-@dp.message(Command("start"))
-async def start_command(message: types.Message):
-    welcome_text = (
-        "🌟 <b>Free Fire Bot</b> 🌟\n\n"
-        "Available commands:\n"
-        "/like <region> <uid> - Send likes\n"
-        "/get <uid> - Get player info\n"
-        "/visit <uid> - Send 1000 visits\n"
-        "/visits <uid> - Send 10k visits (VIP only)\n"
-        "/baninfo <uid> - Check ban status\n"
-        "/setapi <1|2> - Switch API (Admin only)\n"
-        "/allowvisit <user_id> - Add VIP user (Admin only)"
-    )
-    await message.reply(welcome_text, parse_mode=ParseMode.HTML)
-
-@dp.message(Command("like"))
-async def like_command(message: types.Message):
-    if message.chat.id not in ALLOWED_CHAT_IDS:
-        return await message.reply("❌ This bot works only in specific groups!")
-    
     try:
-        _, region, uid = message.text.split()
-    except ValueError:
-        return await message.reply("Usage: /like <region> <uid>")
-    
-    if not re.fullmatch(r"\d{6,15}", uid):
-        return await message.reply("Invalid UID format (6-15 digits)")
-    
-    temp_msg = await message.reply("🔄 Processing your request...")
-    
-    try:
-        params = {'uid': uid, 'region': region}
-        if current_api == 1:
-            params['key'] = API1_KEY
-            api_url = API1_URL
-        else:
-            api_url = API2_URL
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(api_url, params=params)
-            data = response.json()
-
-            if current_api == 1:
-                if data.get('status') == 1:
-                    result = (
-                        f"✅ Likes Sent Successfully\n"
-                        f"Name: {data.get('PlayerNickname', 'N/A')}\n"
-                        f"UID: {data.get('UID', uid)}\n"
-                        f"Before: {data.get('LikesBeforeCommand', 0)}\n"
-                        f"Added: {data.get('LikesGivenByAPI', 0)}\n"
-                        f"After: {data.get('LikesAfterCommand', 0)}"
-                    )
-                else:
-                    result = "⚠️ Player has reached max likes today!"
-            else:
-                if isinstance(data, str) and "Token is being refreshed" in data:
-                    result = "🔧 Service is refreshing, try again later"
-                else:
-                    likes_given = data.get('LikesGivenByAPI', 0)
-                    result = (
-                        f"✅ Likes Sent: {likes_given}\n"
-                        f"Name: {data.get('PlayerNickname', 'N/A')}\n"
-                        f"UID: {data.get('UID', uid)}"
-                    ) if likes_given > 0 else "⚠️ Player has reached max likes today"
-
-        await delete_message_with_delay(message.chat.id, temp_msg.message_id)
-        await message.reply(result)
-
-    except Exception as e:
-        logger.error(f"Like error: {e}")
-        await message.reply("❌ Error processing request")
-
-@dp.message(Command("get"))
-async def get_command(message: types.Message):
-    if message.chat.id not in ALLOWED_CHAT_IDS:
-        return await message.reply("❌ This bot works only in specific groups!")
-    
-    try:
-        _, uid = message.text.split()
-    except ValueError:
-        return await message.reply("Usage: /get <uid>")
-    
-    if not re.fullmatch(r"\d{6,15}", uid):
-        return await message.reply("Invalid UID format (6-15 digits)")
-    
-    wait_msg = await message.reply("🔄 Loading player info...")
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            info_url = f"{PLAYER_INFO_URL}{uid}"
-            banner_url = BANNER_URL.format(uid=uid)
-            outfit_url = OUTFIT_URL.format(uid=uid)
-            
-            info_resp, banner_resp, outfit_resp = await asyncio.gather(
-                client.get(info_url),
-                client.get(banner_url),
-                client.get(outfit_url)
+        response = requests.get(f"{VISIT_API_URL}{uid}")
+        data = response.json()
+        token_count = data.get('Token Count', 'N/A')
+        if "Done" in data.get('message', ''):
+            if token_count == 'N/A' and "Token Count:" in data.get('message', ''):
+                try:
+                    token_count = data['message'].split("Token Count: ")[1].strip()
+                except IndexError:
+                    token_count = 'N/A'
+            message = (
+                f"*⭐ Views Sent Successfully ⭐*\n\n"
+                f"*✅ Done.* Successfully Sent 1000 visits to the UID: {uid}. Token Count: {token_count} 🔥\n\n"
+                f"*ℹ️ Re-Start* Your Game to Check the Visit Counts in Your Profile! 🙃"
             )
+        else:
+            message = "Error: Could not send visits. Please try again later."
 
-            info_resp.raise_for_status()
-            banner_resp.raise_for_status()
-            outfit_resp.raise_for_status()
+        time.sleep(5)
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=temp_msg.message_id
+        )
+        await update.message.reply_text(message, parse_mode='Markdown')
 
-            formatted_text = await clean_and_format_response(info_resp.text)
-            await message.reply(formatted_text, parse_mode=ParseMode.HTML)
-            
-            banner_file = BufferedInputFile(banner_resp.content, filename="banner.webp")
-            await message.answer_sticker(banner_file)
-            
-            outfit_file = BufferedInputFile(outfit_resp.content, filename="outfit.png")
-            await message.answer_photo(outfit_file)
-            
-    except httpx.HTTPStatusError as e:
-        await message.reply(f"❌ API Error: {e.response.status_code}")
     except Exception as e:
-        await message.reply(f"❌ Error: {str(e)}")
-    finally:
-        await delete_message_with_delay(message.chat.id, wait_msg.message_id, 0)
+        logging.error(f"Error processing visit command: {e}")
+        await update.message.reply_text("An error occurred while processing your visit request.")
 
-@dp.message(Command("visit"))
-async def visit_command(message: types.Message):
-    if message.chat.id not in ALLOWED_CHAT_IDS:
-        return await message.reply("❌ This bot works only in specific groups!")
-    
+async def vipvisit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_vip_or_admin(update):
+        await update.message.reply_text("⛔ Эта команда доступна только для VIP пользователей или администратора!")
+        return
+
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
+        await update.message.reply_text("Этот бот работает только в определенной группе!")
+        return
+
+    if not await check_membership(context, update.effective_user.id):
+        keyboard = [[InlineKeyboardButton("Подписка на канал.", url="https://t.me/scromnyi_leaks")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Чтобы использовать бота, подпишитесь на наш канал.",
+            reply_markup=reply_markup
+        )
+        return
+
+    if len(context.args) < 1:
+        await update.message.reply_text("Usage: /vipvisit <uid>")
+        return
+
+    uid = context.args[0]
+    temp_msg = await update.message.reply_text("Got your VIP visit request, please wait...")
+
     try:
-        _, uid = message.text.split()
-    except ValueError:
-        return await message.reply("Usage: /visit <uid>")
-    
-    if not re.fullmatch(r"\d{6,15}", uid):
-        return await message.reply("Invalid UID format (6-15 digits)")
-    
-    temp_msg = await message.reply("🔄 Sending visits...")
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(f"{VISIT_API_URL}{uid}")
+        total_visits = 0
+        token_count = 'N/A'
+
+        for _ in range(20):
+            response = requests.get(f"{VISIT_API_URL}{uid}")
             data = response.json()
-            
-            if "message" in data and "Successfully Sent 1000 visits" in data["message"]:
-                token_count = re.search(r"Token Count: (\d+)", data["message"]).group(1)
-                result = (
-                    f"✅ 1000 Visits Sent\n"
-                    f"UID: {uid}\n"
-                    f"Tokens Left: {token_count}"
+
+            if "Done" in data.get('message', ''):
+                total_visits += 1000
+                token_count = data.get('Token Count', 'N/A')
+                if token_count == 'N/A' and "Token Count:" in data.get('message', ''):
+                    try:
+                        token_count = data['message'].split("Token Count: ")[1].strip()
+                    except IndexError:
+                        token_count = 'N/A'
+            else:
+                logging.error(f"Failed to send visits for UID {uid} on iteration {_}")
+            time.sleep(1)
+
+        if total_visits > 0:
+            message = (
+                f"*⭐ VIP Views Sent Successfully ⭐*\n\n"
+                f"*✅ Done.* Successfully Sent {total_visits} visits to the UID: {uid}. Token Count: {token_count} 🔥\n\n"
+                f"*ℹ️ Re-Start* Your Game to Check the Visit Counts in Your Profile! 🙃"
+            )
+        else:
+            message = "Error: Could not send VIP visits. Please try again later."
+
+        time.sleep(5)
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=temp_msg.message_id
+        )
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    except Exception as e:
+        logging.error(f"Error processing vipvisit command: {e}")
+        await update.message.reply_text("An error occurred while processing your VIP visit request.")
+
+async def like_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
+        await update.message.reply_text("Этот бот работает только в определенной группе!")
+        return
+
+    if not await check_membership(context, update.effective_user.id):
+        keyboard = [[InlineKeyboardButton("Подписка на канал.", url="https://t.me/scromnyi_leaks")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            " Чтобы использовать бота, подпишитесь на наш канал.",
+            reply_markup=reply_markup
+        )
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /like <region> <uid>")
+        return
+
+    region = context.args[0]
+    uid = context.args[1]
+    temp_msg = await update.message.reply_text("Got your request, please wait...")
+
+    try:
+        if current_api == 1:
+            params = {'uid': uid, 'region': region, 'key': API1_KEY}
+            response = requests.get(API1_URL, params=params)
+            data = response.json()
+
+            if data.get('status') == 1:
+                message = (
+                    f"Likes Sent ✅\n"
+                    f"Player Name: {data.get('PlayerNickname', 'N/A')}\n"
+                    f"UID: {data.get('UID', 'N/A')}\n"
+                    f"Likes Before: {data.get('LikesBeforeCommand', 'N/A')}\n"
+                    f"Likes Given: {data.get('LikesGivenByAPI', 'N/A')}\n"
+                    f"Likes After: {data.get('LikesAfterCommand', 'N/A')}"
                 )
             else:
-                result = "❌ Failed to send visits"
-        
-        await delete_message_with_delay(message.chat.id, temp_msg.message_id)
-        await message.reply(result)
-        
-    except Exception as e:
-        logger.error(f"Visit error: {e}")
-        await message.reply("❌ Error sending visits")
+                message = "Player has reached max likes today!"
 
-@dp.message(Command("visits"))
-async def visits_command(message: types.Message):
-    if message.chat.id not in ALLOWED_CHAT_IDS:
-        return await message.reply("❌ This bot works only in specific groups!")
-    
-    if message.from_user.id not in vip_users and not await is_admin(message.from_user.id):
-        return await message.reply("⛔ VIP command only!")
-    
-    try:
-        _, uid = message.text.split()
-    except ValueError:
-        return await message.reply("Usage: /visits <uid>")
-    
-    if not re.fullmatch(r"\d{6,15}", uid):
-        return await message.reply("Invalid UID format (6-15 digits)")
-    
-    temp_msg = await message.reply("🔄 Sending VIP visits (10k)...")
-    
-    try:
-        success = 0
-        tokens = 0
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            for _ in range(10):  # 10 x 1000 = 10k
-                response = await client.get(f"{VISIT_API_URL}{uid}")
-                data = response.json()
-                if "Successfully Sent 1000 visits" in str(data):
-                    success += 1
-                    if match := re.search(r"Token Count: (\d+)", str(data)):
-                        tokens = match.group(1)
-        
-        result = (
-            f"🎖️ {success * 1000} VIP Visits Sent\n"
-            f"UID: {uid}\n"
-            f"Tokens Left: {tokens}"
-        ) if success > 0 else "❌ Failed to send visits"
-        
-        await delete_message_with_delay(message.chat.id, temp_msg.message_id)
-        await message.reply(result)
-        
-    except Exception as e:
-        logger.error(f"VIP visits error: {e}")
-        await message.reply("❌ Error sending VIP visits")
-
-@dp.message(Command("allowvisit"))
-async def allow_visit_command(message: types.Message):
-    if not await is_admin(message.from_user.id):
-        return await message.reply("⛔ Admin command only!")
-    
-    try:
-        _, user_id = message.text.split()
-        user_id = int(user_id)
-        vip_users.add(user_id)
-        await message.reply(f"✅ User {user_id} added to VIP list")
-    except (ValueError, IndexError):
-        await message.reply("Usage: /allowvisit <user_id>")
-
-@dp.message(Command("baninfo"))
-async def ban_info_command(message: types.Message):
-    if message.chat.id not in ALLOWED_CHAT_IDS:
-        return await message.reply("❌ This bot works only in specific groups!")
-    
-    try:
-        _, uid = message.text.split()
-    except ValueError:
-        return await message.reply("Usage: /baninfo <uid>")
-    
-    if not re.fullmatch(r"\d{6,15}", uid):
-        return await message.reply("Invalid UID format (6-15 digits)")
-    
-    temp_msg = await message.reply("🔄 Checking ban status...")
-    
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(f"{BAN_INFO_URL}{uid}")
+        elif current_api == 2:
+            params = {'uid': uid}
+            response = requests.get(API2_URL, params=params)
             data = response.json()
-            
-            if "ban_status" in data:
-                if "not banned" in data["ban_status"].lower():
-                    result = "✅ Account not banned"
-                else:
-                    result = f"⛔ {data['ban_status']}"
+
+            if isinstance(data, str) and "Token is being refreshed" in data:
+                message = "Service is refreshing, please try again later!"
             else:
-                result = "❌ Could not determine ban status"
-        
-        await delete_message_with_delay(message.chat.id, temp_msg.message_id)
-        await message.reply(result)
-        
+                likes_given = data.get('LikesGivenByAPI', 0)
+
+                if likes_given == 0:
+                    message = "Player has reached max likes today."
+                else:
+                    message = (
+                        f"✅ Likes Sent\n"
+                        f"Player Name: {data.get('PlayerNickname', 'N/A')}\n"
+                        f"UID: {data.get('UID', 'N/A')}\n"
+                        f"Likes Before: {data.get('LikesbeforeCommand', data.get('LikesBefore', 'N/A'))}\n"
+                        f"Likes Given: {likes_given}\n"
+                        f"Likes After: {data.get('LikesafterCommand', data.get('LikesAfter', 'N/A'))}"
+                    )
+
+        elif current_api == 3:
+            params = {'key': API3_KEY, 'uid': uid, 'region': region}
+            response = requests.get(API3_URL, params=params)
+            data = response.json()
+
+            if isinstance(data, list) and len(data) >= 2:
+                verify_data = data[0]
+                status_data = data[1]
+
+                if verify_data.get("verify") == "true":
+                    if "Likes Added" in status_data:
+                        message = (
+                            f"✅ Likes Sent\n"
+                            f"Player Name: {status_data.get('Player Name', 'N/A')}\n"
+                            f"UID: {status_data.get('Player UID', uid)}\n"
+                            f"Likes Before: {status_data.get('Likes Before Command', 'N/A')}\n"
+                            f"Likes Given: {status_data.get('Likes Added', 'N/A')}\n"
+                            f"Likes After: {status_data.get('Likes after', 'N/A')}"
+                        )
+                    else:
+                        message = "Player has reached max likes for today!"
+                else:
+                    message = "Verification failed!"
+            elif isinstance(data, dict) and data.get("error"):
+                message = f"Error:"
+            else:
+                message = "Something went wrong"
+
+        time.sleep(5)
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=temp_msg.message_id
+        )
+
+        await update.message.reply_text(message)
+
     except Exception as e:
-        logger.error(f"Ban check error: {e}")
-        await message.reply("❌ Error checking ban status")
+        logging.error(f"Error processing like command with API:")
+        await update.message.reply_text("An error occurred while processing your request.")
 
-@dp.message(Command("setapi"))
-async def set_api_command(message: types.Message):
-    if not await is_admin(message.from_user.id):
-        return await message.reply("⛔ Admin command only!")
-    
+async def set_api_ratio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global current_api
+
+    if not await is_admin(update):
+        await update.message.reply_text("⛔ Эта команда доступна только администратору!")
+        return
+
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
+        await update.message.reply_text("Этот бот работает только в определенной группе!")
+        return
+
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "Usage: /setapi <1, 2, or 3>\n"
+            "Example:\n/setapi 1 - использовать первый API\n"
+            "/setapi 2 - использовать второй API\n"
+            "/setapi 3 - использовать третий API"
+        )
+        return
+
     try:
-        _, api_num = message.text.split()
-        api_num = int(api_num)
-        if api_num in (1, 2):
-            global current_api
-            current_api = api_num
-            await message.reply(f"✅ Switched to API {api_num}")
+        api_choice = int(context.args[0])
+        if api_choice in [1, 2, 3]:
+            current_api = api_choice
+            api_names = {1: "first", 2: "second", 3: "third"}
+            await update.message.reply_text(f"✅ API switched to {api_names[current_api]} API")
         else:
-            await message.reply("Usage: /setapi <1|2>")
-    except (ValueError, IndexError):
-        await message.reply("Usage: /setapi <1|2>")
+            await update.message.reply_text(
+                "Please enter 1, 2, or 3\n"
+                "1 - первый API\n2 - второй API\n3 - третий API"
+            )
+    except ValueError:
+        await update.message.reply_text(
+            "Invalid value. Please provide 1, 2, or 3\n"
+            "1 - первый API\n2 - второй API\n3 - третий API"
+        )
 
-async def main():
-    await dp.start_polling(bot)
+async def vipus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(update):
+        await update.message.reply_text("⛔ Эта команда доступна только администратору!")
+        return
+
+    if update.effective_chat.id not in ALLOWED_CHAT_ID:
+        await update.message.reply_text("Этот бот работает только в определенной группе!")
+        return
+
+    if len(context.args) < 1:
+        await update.message.reply_text("Usage: /vipus <user_id>")
+        return
+
+    try:
+        user_id = int(context.args[0])
+        vip_users.add(user_id)
+        await update.message.reply_text(f"✅ User {user_id} has been granted VIP status!")
+    except ValueError:
+        await update.message.reply_text("Invalid user ID. Please provide a valid numeric user ID.")
+
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start_command))  # Жаңы /start командасы
+    application.add_handler(CommandHandler("like", like_command))
+    application.add_handler(CommandHandler("setapi", set_api_ratio))
+    application.add_handler(CommandHandler("visit", visit_command))
+    application.add_handler(CommandHandler("vipvisit", vipvisit_command))
+    application.add_handler(CommandHandler("vipus", vipus_command))
+    application.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
